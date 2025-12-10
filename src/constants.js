@@ -68,7 +68,7 @@ export const RULES = {
         desc: '5つの数字の最小公倍数 (上限1000でカット)',
         calc: (cards) => {
             const val = getVals(cards).reduce((a, b) => lcm(a, b), 1);
-            return val > 9999 ? 9999 : val; // 大きくなりすぎないようキャップ
+            return val; // 大きくなりすぎないようキャップ
         }
     },
     XOR_SUM: {
