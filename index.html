@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>エアポーカー</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="ai-area" class="player-area">
+            <h2>AI</h2>
+            <div class="status-row">
+                <span>Wins: <span id="ai-wins">0</span></span>
+                <span class="chip-count">AIR: <span id="ai-chips">30</span></span>
+            </div>
+            <div id="ai-numbers" class="number-container"></div>
+            <div id="ai-hand" class="card-container"></div>
+        </div>
+
+        <div id="info-area">
+
+            <div id="oxygen-container" style="width: 80%; margin: 0 auto 10px auto; display:none;">
+                <div style="text-align: left; font-size: 0.8em; color: #3498db; margin-bottom: 2px;">OXYGEN SUPPLY</div>
+                <div class="progress-bar-bg">
+                    <div id="oxygen-bar" class="progress-bar-fill"></div>
+                </div>
+            </div>
+
+            <div id="start-screen">
+                <h1 class="title-logo">AIR POKER</h1>
+                
+                <div class="rule-box">
+                    <h3>【ルール概要】</h3>
+                    <ul>
+                        <li><strong>初期エア(AIR):</strong> 30 (1 AIR ≈ 45秒の呼吸分)</li>
+                        <li><strong>参加料(Ante):</strong> ラウンド数と同じ額 (R1=1, R2=2...)</li>
+                        <li><strong>勝利条件:</strong> 相手のエアを尽きさせる</li>
+                    </ul>
+                    <h3>【Betの取り決め】</h3>
+                    <ul>
+                        <li>カード(数字)オープン後にBet開始</li>
+                        <li>先攻はラウンドごとに交代</li>
+                        <li><strong>レイズ上限:</strong> 場にある総額(POT)の半分まで</li>
+                        <li><strong>Bet上限:</strong> エアの少ない方の所持数まで</li>
+                    </ul>
+                    <h3>【天災】</h3>
+                    <ul>
+                        <li>両者が同じカード構成で役を作っていた場合発生</li>
+                        <li>敗者は<strong>賭け額と同等のエアを追加で失う</strong></li>
+                    </ul>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    難易度: 
+                    <select id="difficulty-select" style="font-size: 18px; padding: 5px;">
+                        <option value="EASY" style="color:rgb(75, 189, 227);">EASY</option>
+                        <option value="NORMAL" style="color:rgb(7, 179, 7);" selected>NORMAL</option>
+                        <option value="HARD" style="color:red;">HARD</option>
+                        <option value="GOD" style="color:gold;">GOD</option>
+                    </select>
+                </div>
+                <br>
+                <button id="start-btn" class="start-button">GAME START</button>
+            </div>
+
+            <!-- <h1 id="rule-display" style="display:none;">Rule: ???</h1> -->
+            <div id="pot-display" style="display:none;">POT: <span id="pot-amount">0</span></div>
+            <div id="message-box"></div>
+
+            <div id="bet-controls" style="display:none;">
+                <div class="bet-info">
+                    <div>相手のBet: <span id="current-enemy-bet" class="highlight-red">0</span></div>
+                    <div>Call必要額: <span id="amount-to-call" class="highlight-yellow">0</span></div>
+                    <div>Raise上限: <span id="raise-limit" class="highlight-green">0</span></div>
+                </div>
+
+                <div class="bet-input-area">
+                    <button id="btn-minus">-</button>
+                    <input type="number" id="bet-input" value="0" readonly>
+                    <button id="btn-plus">+</button>
+                </div>
+
+                <div class="bet-actions">
+                    <button id="btn-fold" class="btn-fold">FOLD</button>
+                    <button id="btn-confirm" class="btn-confirm">BET!</button>
+                </div>
+            </div>
+
+            <button id="next-round-btn" style="display:none;">次のラウンドへ</button>
+        </div>
+
+        <div id="player-area" class="player-area">
+            <div id="player-hand" class="card-container"></div>
+            <div id="player-numbers" class="number-container"></div>
+            <div class="status-row">
+                <span>Wins: <span id="player-wins">0</span></span>
+                <span class="chip-count">AIR: <span id="player-chips">30</span></span>
+            </div>
+            <h2>YOU</h2>
+        </div>
+    </div>
+    
+    <div id="thunder-overlay" class="thunder-overlay"></div>
+
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>

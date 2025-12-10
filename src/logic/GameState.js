@@ -1,0 +1,426 @@
+import { Deck } from './Deck.js';
+import { RULES } from '../constants.js';
+import { Solver } from './Solver.js';
+import { PokerAI } from './AI.js';
+import { HandEvaluator } from './HandEvaluator.js';
+
+export class GameState {
+    constructor() {
+        this.deck = new Deck(); 
+        this.bannedCardIds = new Set();
+        this.currentRule = null;
+        this.ai = new PokerAI();
+        this.difficulty = 'NORMAL';
+
+        this.phase = 'SELECT'; 
+        this.turn = 'human';   
+        this.firstBetter = 'human';
+        this.round = 1;
+        this.pot = 0;
+        this.currentRoundBets = { human: 0, ai: 0 };
+        this.selectedIndices = { human: -1, ai: -1 };
+        
+        // ベットラウンドの状態管理用フラグ
+        this.hasActionOccurred = false; 
+
+        this.history = [];
+
+        this.players = {
+            human: { numbers: [], wins: 0, chips: 30, folded: false },
+            ai:    { numbers: [], wins: 0, chips: 30, folded: false }
+        };
+    }
+
+    startNewGame(difficulty = 'NORMAL') {
+        this.difficulty = difficulty;
+        this.ai.setDifficulty(difficulty);
+        this.round = 1;
+        this.bannedCardIds.clear();
+        this.history = [];
+        this.players.human.chips = 30;
+        this.players.ai.chips = 30;
+        this.players.human.wins = 0;
+        this.players.ai.wins = 0;
+        this.firstBetter = 'human';
+        
+        this.startRoundLogic();
+    }
+
+    startRoundLogic() {
+        const keys = Object.keys(RULES);
+        this.currentRule = RULES[keys[Math.floor(Math.random() * keys.length)]];
+        console.log(`[DEBUG] Rule: ${this.currentRule.name}`);
+
+        if(this.round === 1) {
+            this.dealStructuredNumbers();
+        } else {
+            if (this.players.human.numbers.length === 0) {
+                 this.players.human.numbers = this.generateValidNumbers(5);
+                 this.players.ai.numbers = this.generateValidNumbers(5);
+            }
+        }
+        this.startRound();
+    }
+
+    // ★修正: 重複トークン回避を実装
+    dealStructuredNumbers() {
+        const fullDeck = [...this.deck.cards];
+        this.shuffleArray(fullDeck);
+        const group1 = fullDeck.slice(0, 26);
+        const group2 = fullDeck.slice(26, 52);
+
+        // 人間のトークンを先に生成
+        this.players.human.numbers = this.generateTieredTokens(group1, null);
+        
+        // AIのトークン生成時、人間が持っている数字を避けるリストとして渡す
+        const forbiddenNumbers = new Set(this.players.human.numbers);
+        this.players.ai.numbers = this.generateTieredTokens(group2, forbiddenNumbers);
+        
+        console.log("Structured Tokens Dealt.");
+    }
+
+    generateTieredTokens(pool, forbiddenSet) {
+        let currentPool = [...pool];
+        const tokens = [];
+        const targets = [
+            { min: 8000, max: 9999 },
+            { min: 5000, max: 9999 },
+            { min: 5000, max: 9999 },
+            { min: 5000, max: 9999 },
+            { min: 0,    max: 4999 }
+        ];
+
+        for (const target of targets) {
+            let bestHand = null;
+            let calcNum = -1;
+
+            // 1000回試行
+            for (let i = 0; i < 1000; i++) {
+                if (currentPool.length < 5) break;
+                const sample = this.getRandomSubarray(currentPool, 5);
+                const score = HandEvaluator.evaluate(sample);
+                const num = this.currentRule.calc(sample);
+
+                // 条件チェック: スコア範囲内 かつ 禁止数字ではない
+                if (score >= target.min && score <= target.max) {
+                    if (!forbiddenSet || !forbiddenSet.has(num)) {
+                        bestHand = sample;
+                        calcNum = num;
+                        break;
+                    }
+                }
+            }
+            // フォールバック
+            if (!bestHand) {
+                // 禁止数字と被らないものを適当に探す
+                for(let k=0; k<100; k++) {
+                    bestHand = this.getRandomSubarray(currentPool, 5);
+                    calcNum = this.currentRule.calc(bestHand);
+                    if (!forbiddenSet || !forbiddenSet.has(calcNum)) break;
+                }
+            }
+
+            const usedIds = new Set(bestHand.map(c => c.id));
+            currentPool = currentPool.filter(c => !usedIds.has(c.id));
+            tokens.push(calcNum);
+        }
+        this.shuffleArray(tokens);
+        return tokens;
+    }
+
+    startRound() {
+        this.phase = 'SELECT';
+        this.pot = 0;
+        this.currentRoundBets = { human: 0, ai: 0 };
+        this.selectedIndices = { human: -1, ai: -1 };
+        ['human', 'ai'].forEach(p => this.players[p].folded = false);
+
+        const ante = this.round;
+        if (this.players.human.chips < ante || this.players.ai.chips < ante) {
+            this.phase = 'GAME_OVER';
+            return;
+        }
+
+        this.payChips('human', ante);
+        this.payChips('ai', ante);
+
+        if (this.players.ai.numbers.length > 0) {
+            this.selectedIndices.ai = this.ai.decideNumberToPlay(this.players.ai.numbers);
+        }
+    }
+
+    payChips(playerKey, amount) {
+        if (this.players[playerKey].chips < amount) amount = this.players[playerKey].chips;
+        this.players[playerKey].chips -= amount;
+        this.currentRoundBets[playerKey] += amount;
+        this.pot += amount;
+    }
+
+    selectCard(humanIndex) {
+        if (this.phase !== 'SELECT') return null;
+        this.selectedIndices.human = humanIndex;
+        
+        this.phase = 'BETTING';
+        this.hasActionOccurred = false; // アクションフラグのリセット
+
+        this.firstBetter = (this.round % 2 !== 0) ? 'human' : 'ai';
+        this.turn = this.firstBetter;
+
+        if (this.turn === 'ai') {
+            return this.processAiTurn();
+        }
+
+        return this.getBetState();
+    }
+
+    getBetState() {
+        const hBet = this.currentRoundBets.human;
+        const aBet = this.currentRoundBets.ai;
+        const callAmount = Math.max(0, aBet - hBet);
+        const maxRaise = Math.floor(this.pot / 2);
+
+        return {
+            phase: 'BETTING',
+            turn: this.turn,
+            hNum: this.players.human.numbers[this.selectedIndices.human],
+            aNum: this.players.ai.numbers[this.selectedIndices.ai],
+            pot: this.pot,
+            enemyBetTotal: aBet,
+            myBetTotal: hBet,
+            callAmount: callAmount,
+            minBet: callAmount,
+            maxRaise: maxRaise,
+            aiActionLog: this.aiLastAction || null
+        };
+    }
+
+    // ★修正: ベットロジック（勝手に終わらないように）
+    processPlayerBet(additionalAmount) {
+        if (this.phase !== 'BETTING' || this.turn !== 'human') return;
+
+        if (additionalAmount === -1) {
+            this.players.human.folded = true;
+            return this.resolveRound('ai');
+        }
+
+        // 支払い
+        this.players.human.chips -= additionalAmount;
+        this.currentRoundBets.human += additionalAmount;
+        this.pot += additionalAmount;
+        
+        // アクションがあったことを記録
+        this.hasActionOccurred = true;
+
+        const hTotal = this.currentRoundBets.human;
+        const aTotal = this.currentRoundBets.ai;
+        
+        // 判定ロジック修正
+        if (hTotal === aTotal) {
+            // 金額が並んだ（コール、またはチェック）
+            
+            // ケース1: 先攻がチェック(0)しただけなら、まだ終わらない。後攻へ。
+            if (this.firstBetter === 'human' && additionalAmount === 0 && aTotal === this.round /*アンティ分のみ*/) { // ※アンティ考慮が必要かも。currentRoundBetsにはアンティ含まれている想定
+                 // アンティ処理でcurrentRoundBetsに入れているので、
+                 // 「現在のベット額が開始時の額（アンティ）と同じ」かつ「先攻」ならチェック扱い
+                 // ここでは簡易的に「相手がアクションしていない」なら交代とみなす
+                 this.turn = 'ai';
+                 return this.processAiTurn();
+            }
+            
+            // ケース2: 後攻がコール/チェックした、または先攻が相手のレイズにコールした
+            return this.resolveShowdown();
+
+        } else if (hTotal > aTotal) {
+            // レイズした -> AIへ
+            this.turn = 'ai';
+            return this.processAiTurn();
+        }
+    }
+
+    processAiTurn() {
+        const hTotal = this.currentRoundBets.human;
+        const aTotal = this.currentRoundBets.ai;
+        const diff = hTotal - aTotal;
+        const maxRaise = Math.floor(this.pot / 2);
+
+        const action = this.ai.decideAction(diff, this.players.ai.chips, maxRaise);
+        this.aiLastAction = action.type;
+
+        if (action.type === 'FOLD') {
+            this.players.ai.folded = true;
+            return this.resolveRound('human');
+        } else if (action.type === 'CALL') {
+            this.payChips('ai', diff);
+            
+            // もしAIが先攻でチェックしただけなら、人間のターンへ
+            if (this.firstBetter === 'ai' && diff === 0 && !this.hasActionOccurred) {
+                // hasActionOccurred は人間のアクションフラグなのでここでは使えない
+                // 単純に「ベット額が変わっていない」ならチェックとみなす
+                // 厳密には状態管理が必要だが、
+                // 「AIが先攻」かつ「AIがCheck」なら、次はHumanの番
+                this.turn = 'human';
+                return this.getBetState();
+            }
+
+            return this.resolveShowdown();
+
+        } else if (action.type === 'RAISE') {
+            const raiseAmt = action.amount;
+            this.payChips('ai', diff + raiseAmt);
+            this.turn = 'human';
+            return this.getBetState();
+        }
+        
+        return this.getBetState();
+    }
+
+    resolveRound(winnerKey) {
+        this.phase = 'RESULT';
+        this.recordHistory(winnerKey, false);
+        this.consumeNumbers();
+        this.players[winnerKey].wins++;
+        this.players[winnerKey].chips += this.pot;
+        return {
+            phase: 'RESULT',
+            winner: winnerKey,
+            isShowdown: false,
+            pot: this.pot,
+            humanScore: this.players.human.chips,
+            aiScore: this.players.ai.chips,
+            isTensai: false
+        };
+    }
+
+    resolveShowdown() {
+        this.phase = 'RESULT';
+        const hNum = this.players.human.numbers[this.selectedIndices.human];
+        const aNum = this.players.ai.numbers[this.selectedIndices.ai];
+        const realValidCards = this.deck.cards.filter(c => !this.bannedCardIds.has(c.id));
+        
+        const hResult = Solver.findBestHand(hNum, this.currentRule, realValidCards, 50000);
+        const aResult = Solver.findBestHand(aNum, this.currentRule, realValidCards, 50000);
+        
+        const hScore = hResult.hand ? hResult.score : -1;
+        const aScore = aResult.hand ? aResult.score : -1;
+
+        let winner = 'draw';
+        if (hScore > aScore) winner = 'human';
+        else if (aScore > hScore) winner = 'ai';
+
+        let isTensai = false;
+        if (hResult.hand && aResult.hand) {
+            const hSet = new Set(hResult.hand.map(c => c.id));
+            for (let c of aResult.hand) {
+                if (hSet.has(c.id)) {
+                    isTensai = true;
+                    break;
+                }
+            }
+        }
+
+        if (winner === 'human') {
+            this.players.human.chips += this.pot;
+            if (isTensai) this.applyTensaiPenalty('ai');
+        } else if (winner === 'ai') {
+            this.players.ai.chips += this.pot;
+            if (isTensai) this.applyTensaiPenalty('human');
+        } else {
+            this.players.human.chips += Math.floor(this.pot / 2);
+            this.players.ai.chips += Math.ceil(this.pot / 2);
+        }
+
+        this.recordHistory(winner, true);
+
+        if(hResult.hand) hResult.hand.forEach(c => this.bannedCardIds.add(c.id));
+        if(aResult.hand) aResult.hand.forEach(c => this.bannedCardIds.add(c.id));
+        
+        if(winner === 'human') this.players.human.wins++;
+        if(winner === 'ai') this.players.ai.wins++;
+
+        this.consumeNumbers();
+
+        return {
+            phase: 'RESULT',
+            winner: winner,
+            isShowdown: true,
+            humanScoreVal: hScore,
+            aiScoreVal: aScore,
+            pot: this.pot,
+            humanScore: this.players.human.chips,
+            aiScore: this.players.ai.chips,
+            isTensai: isTensai
+        };
+    }
+
+    applyTensaiPenalty(loserKey) {
+        const penalty = Math.floor(this.pot / 2);
+        this.players[loserKey].chips -= penalty;
+        console.log(`TENSAI! ${loserKey} lost extra ${penalty} chips.`);
+    }
+
+    consumeNumbers() {
+        this.players.human.numbers.splice(this.selectedIndices.human, 1);
+        this.players.ai.numbers.splice(this.selectedIndices.ai, 1);
+        this.round++;
+    }
+
+    recordHistory(winner, isShowdown) {
+        const hNum = this.players.human.numbers[this.selectedIndices.human];
+        const aNum = this.players.ai.numbers[this.selectedIndices.ai];
+        this.history.push({
+            round: this.round,
+            hNum: hNum,
+            aNum: aNum,
+            winner: winner,
+            pot: this.pot,
+            method: isShowdown ? 'Showdown' : 'Fold'
+        });
+    }
+
+    shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+    }
+    getRandomSubarray(arr, size) {
+        if (arr.length < size) return arr;
+        const result = [];
+        const indices = new Set();
+        while(result.length < size) {
+            const idx = Math.floor(Math.random() * arr.length);
+            if(!indices.has(idx)) {
+                indices.add(idx);
+                result.push(arr[idx]);
+            }
+        }
+        return result;
+    }
+    generateValidNumbers(count) {
+        const numbers = [];
+        const available = this.deck.getRemainingCards(); 
+        for(let i=0; i<count; i++) {
+            const tempHand = [...available].sort(() => 0.5 - Math.random()).slice(0, 5);
+            numbers.push(this.currentRule.calc(tempHand));
+        }
+        return numbers;
+    }
+    decayOxygen() {
+        if (this.phase === 'RESULT' || this.phase === 'GAME_OVER') return null;
+        let humanDecayed = false;
+        let aiDecayed = false;
+        if (this.players.human.chips > 0) {
+            this.players.human.chips -= 1;
+            humanDecayed = true;
+        }
+        if (this.players.ai.chips > 0) {
+            this.players.ai.chips -= 1;
+            aiDecayed = true;
+        }
+        if (this.players.human.chips <= 0 || this.players.ai.chips <= 0) {
+            this.phase = 'GAME_OVER';
+            return { humanDecayed, aiDecayed, isGameOver: true };
+        }
+        return { humanDecayed, aiDecayed, isGameOver: false };
+    }
+}
