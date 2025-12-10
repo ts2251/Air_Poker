@@ -144,8 +144,16 @@ export class GameState {
         this.payChips('human', ante);
         this.payChips('ai', ante);
 
+        // ★修正: AIの数字選択時に情報を渡す
         if (this.players.ai.numbers.length > 0) {
-            this.selectedIndices.ai = this.ai.decideNumberToPlay(this.players.ai.numbers);
+            // 現在の有効カードリストを作成
+            const validCards = this.deck.cards.filter(c => !this.bannedCardIds.has(c.id));
+            
+            this.selectedIndices.ai = this.ai.decideNumberToPlay(
+                this.players.ai.numbers,
+                this.currentRule, // GOD用: 正解ルール
+                validCards        // GOD用: 真実のカード
+            );
         }
     }
 
@@ -243,34 +251,39 @@ export class GameState {
         const diff = hTotal - aTotal;
         const maxRaise = Math.floor(this.pot / 2);
 
-        const action = this.ai.decideAction(diff, this.players.ai.chips, maxRaise);
+        // ★追加: GOD用に自分の手の正確なスコアを計算して渡す
+        let aiHandScore = null;
+        if (this.ai.difficulty === 'GOD') {
+            const aNum = this.players.ai.numbers[this.selectedIndices.ai];
+            const validCards = this.deck.cards.filter(c => !this.bannedCardIds.has(c.id));
+            // 高精度で計算
+            const result = Solver.findBestHand(aNum, this.currentRule, validCards, 5000);
+            if (result && result.hand) {
+                aiHandScore = result.score;
+            } else {
+                aiHandScore = 0; // 役なし確定
+            }
+        }
+
+        // 引数に aiHandScore を追加
+        const action = this.ai.decideAction(diff, this.players.ai.chips, maxRaise, aiHandScore);
         this.aiLastAction = action.type;
 
-        if (action.type === 'FOLD') {
+if (action.type === 'FOLD') {
             this.players.ai.folded = true;
             return this.resolveRound('human');
         } else if (action.type === 'CALL') {
             this.payChips('ai', diff);
-            
-            // もしAIが先攻でチェックしただけなら、人間のターンへ
-            if (this.firstBetter === 'ai' && diff === 0 && !this.hasActionOccurred) {
-                // hasActionOccurred は人間のアクションフラグなのでここでは使えない
-                // 単純に「ベット額が変わっていない」ならチェックとみなす
-                // 厳密には状態管理が必要だが、
-                // 「AIが先攻」かつ「AIがCheck」なら、次はHumanの番
-                this.turn = 'human';
-                return this.getBetState();
+            if (diff === 0 && this.firstBetter === 'human') {
+                return this.resolveShowdown();
             }
-
             return this.resolveShowdown();
-
         } else if (action.type === 'RAISE') {
             const raiseAmt = action.amount;
             this.payChips('ai', diff + raiseAmt);
             this.turn = 'human';
             return this.getBetState();
         }
-        
         return this.getBetState();
     }
 
