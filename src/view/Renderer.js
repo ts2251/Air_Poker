@@ -151,7 +151,7 @@ export class Renderer {
         this.els.aiHand.appendChild(createResultBox(aText, result.aiScoreVal));
 
         let msg = "";
-        if (result.isTensai) msg = "【天災発生】カード重複！敗者は追加のチップを失いました。";
+        if (result.isTensai) msg = "【天災発生】敗者は追加のチップを失いました。";
         else if (result.winner === 'human') msg = "あなたの勝ち！";
         else if (result.winner === 'ai') msg = "AIの勝ち...";
         else msg = "引き分け";

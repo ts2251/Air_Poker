@@ -2,22 +2,27 @@
 
 /* 全体のレイアウト（変更なし） */
 body {
-    background-color: #2c3e50;
+    background-color: #0c151f;
     color: white;
     font-family: 'Helvetica Neue', Arial, sans-serif;
     margin: 0;
     display: flex;
     justify-content: center;
-    height: 100vh;
+    /* height: 100vh;  <-- 削除 (高さを固定しない) */
+    min-height: 100vh; /* 追加 (最低でも画面いっぱいに広げる) */
+    /* overflow: hidden; <-- 削除 (スクロールできるようにする) */
+    overflow-y: auto; /* 追加 (縦スクロールを許可) */
 }
 
 #game-container {
     width: 100%;
-    max-width: 800px;
+    max-width: 900px;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    padding: 20px;
+    justify-content: space-between; /* 要素を上下に散らす */
+    padding: 20px 10px; /* 上下に少し余白を追加 */
+    box-sizing: border-box;
+    min-height: 100vh; /* 追加 */
 }
 
 .player-area {
@@ -412,9 +417,10 @@ button:hover { background: #2980b9; }
     
     /* 1. 全体の余白調整 */
     #game-container {
-        padding: 5px;
-        height: 100vh; /* 画面いっぱいに */
-        justify-content: space-evenly; /* 等間隔に配置 */
+        padding: 10px;
+        /* height: 100vh; <-- 削除 (無理に1画面に収めようとしない) */
+        justify-content: flex-start; /* 上から順に並べる */
+        gap: 20px; /* 要素同士の間隔を空ける */
     }
 
     /* 2. カードと文字を大きく */
