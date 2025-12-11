@@ -27,7 +27,11 @@ export class Renderer {
             container: document.getElementById('game-container'),
 
             oxygenContainer: document.getElementById('oxygen-container'),
-            oxygenBar: document.getElementById('oxygen-bar')
+            oxygenBar: document.getElementById('oxygen-bar'),
+            // バトルゾーン
+            battleArea: document.getElementById('battle-area'),
+            battleTokenAi: document.getElementById('battle-token-ai'),
+            battleTokenHuman: document.getElementById('battle-token-human')
         };
     }
 
@@ -43,6 +47,7 @@ export class Renderer {
         this.els.betControls.style.display = 'none';
         this.els.playerHand.innerHTML = '';
         this.els.aiHand.innerHTML = '';
+        this.els.battleArea.style.opacity = '0'; // 最初は隠す
         
         this.renderState(gameState);
         this.showMessage(`ラウンド${gameState.round}開始。参加費${gameState.round}を支払いました。数字を選んでください。`);
@@ -64,20 +69,24 @@ export class Renderer {
         this.renderTokens(gameState);
     }
 
-    renderTokens(gameState) {
+renderTokens(gameState) {
         this.els.playerNumbers.innerHTML = '';
         gameState.players.human.numbers.forEach((num, index) => {
             const tokenCard = document.createElement('div');
             tokenCard.className = 'card token clickable';
-            if (gameState.phase !== 'SELECT') tokenCard.style.opacity = '0.6';
-
+            if (gameState.phase !== 'SELECT') {
+                // 選んだカード以外は薄くするなどの処理
+                // ここでは単純に選択中は押せる、それ以外は押せない表現
+                tokenCard.style.opacity = '0.6';
+                tokenCard.classList.remove('clickable');
+            } else {
+                tokenCard.onclick = () => {
+                    if (typeof window.handlePlayerAction === 'function') {
+                        window.handlePlayerAction(index);
+                    }
+                };
+            }
             tokenCard.appendChild(document.createTextNode(num));
-
-            tokenCard.onclick = () => {
-                if (gameState.phase === 'SELECT' && typeof window.handlePlayerAction === 'function') {
-                    window.handlePlayerAction(index);
-                }
-            };
             this.els.playerNumbers.appendChild(tokenCard);
         });
 
@@ -85,21 +94,19 @@ export class Renderer {
         gameState.players.ai.numbers.forEach((num, i) => {
             const tokenCard = document.createElement('div');
             tokenCard.className = 'card token enemy';
-            
-            if (gameState.phase !== 'SELECT' && i === gameState.selectedIndices.ai) {
-                 tokenCard.textContent = num; 
-                 tokenCard.style.background = '#f1c40f';
-                 tokenCard.style.color = '#333';
-            } else {
-                 tokenCard.textContent = '?';
-            }
+            tokenCard.textContent = '?';
             this.els.aiNumbers.appendChild(tokenCard);
         });
     }
 
-    showBetPhase(hNum, aNum, pot) {
-        this.showMessage(`お互いの数字が出ました（あなた:${hNum} vs AI:${aNum}）。アクションを選択してください。`);
+showBetPhase(hNum, aNum, pot) {
+        this.showMessage(`カードオープン！Betを開始します。`);
         this.els.betControls.style.display = 'block';
+        
+        // バトルゾーン更新
+        this.els.battleTokenHuman.textContent = hNum;
+        this.els.battleTokenAi.textContent = aNum;
+        this.els.battleArea.style.opacity = '1';
     }
 
     renderResult(result) {
@@ -113,6 +120,11 @@ export class Renderer {
             const loserName = (result.winner === 'human') ? 'AI' : 'あなた';
             this.showMessage(`${loserName}が降りました。${winnerName}の勝ちです！（+${result.pot}チップ）`);
             this.els.nextBtn.style.display = 'inline-block';
+            
+            // バトルゾーン更新（Fold時も出したカードは表示しておく）
+            if (result.hNum) this.els.battleTokenHuman.textContent = result.hNum;
+            if (result.aNum) this.els.battleTokenAi.textContent = result.aNum;
+            this.els.battleArea.style.opacity = '1';
             return;
         }
 
@@ -147,6 +159,8 @@ export class Renderer {
         const hText = result.winner === 'human' ? 'WIN' : (result.winner === 'ai' ? 'LOSE' : 'DRAW');
         const aText = result.winner === 'ai' ? 'WIN' : (result.winner === 'human' ? 'LOSE' : 'DRAW');
 
+        this.els.playerHand.style.display = 'block';
+        this.els.aiHand.style.display = 'block';
         this.els.playerHand.appendChild(createResultBox(hText, result.humanScoreVal));
         this.els.aiHand.appendChild(createResultBox(aText, result.aiScoreVal));
 

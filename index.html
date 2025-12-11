@@ -6,61 +6,15 @@
     <title>エアポーカー</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        /* ルール説明部分の専用デザイン改修 */
-        .rule-box ul {
-            list-style: none; /* ・を消す */
-            padding: 0;
-            margin: 0;
-        }
-
-        .rule-box li {
-            margin-bottom: 8px;
-            padding-bottom: 4px;
-            border-bottom: 1px dashed rgba(255, 255, 255, 0.2); /* 薄い下線 */
-            font-size: 0.95em;
-            line-height: 1.6;
-        }
-
-        .rule-box li:last-child {
-            border-bottom: none;
-        }
-
-        /* 見出しのデザイン */
-        .rule-section-title {
-            color: #00d2ff; /* シアン */
-            font-size: 1.1em;
-            font-weight: bold;
-            border-left: 4px solid #00d2ff; /* 左側のアクセント線 */
-            padding-left: 10px;
-            margin-top: 15px;
-            margin-bottom: 8px;
-            text-shadow: 0 0 5px rgba(0, 210, 255, 0.5);
-        }
-
-        /* 危険な見出し（天災） */
-        .rule-section-title.danger {
-            color: #ff4757; /* 赤 */
-            border-left-color: #ff4757;
-            text-shadow: 0 0 5px rgba(255, 71, 87, 0.5);
-        }
-
-        /* キーワード強調 */
-        .keyword {
-            color: #f1c40f; /* 金色 */
-            font-weight: bold;
-        }
-        
-        .value {
-            color: #ffffff;
-            font-weight: bold;
-            font-family: monospace;
-            font-size: 1.1em;
-        }
-
-        .alert-text {
-            color: #ff6b81;
-            font-weight: bold;
-        }
+        /* ルール説明等の微調整CSS */
+        .rule-box ul { list-style: none; padding: 0; margin: 0; }
+        .rule-box li { margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px dashed rgba(255, 255, 255, 0.2); font-size: 0.95em; line-height: 1.6; }
+        .rule-box li:last-child { border-bottom: none; }
+        .rule-section-title { color: #00d2ff; font-size: 1.1em; font-weight: bold; border-left: 4px solid #00d2ff; padding-left: 10px; margin-top: 15px; margin-bottom: 8px; text-shadow: 0 0 5px rgba(0, 210, 255, 0.5); }
+        .rule-section-title.danger { color: #ff4757; border-left-color: #ff4757; text-shadow: 0 0 5px rgba(255, 71, 87, 0.5); }
+        .keyword { color: #f1c40f; font-weight: bold; }
+        .value { color: #ffffff; font-weight: bold; font-family: monospace; font-size: 1.1em; }
+        .alert-text { color: #ff6b81; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -72,11 +26,10 @@
                 <span class="chip-count">AIR: <span id="ai-chips">30</span></span>
             </div>
             <div id="ai-numbers" class="number-container"></div>
-            <div id="ai-hand" class="card-container"></div>
+            <div id="ai-hand" class="card-container" style="display:none;"></div>
         </div>
 
         <div id="info-area">
-
             <div id="oxygen-container" style="width: 80%; margin: 0 auto 10px auto; display:none;">
                 <div style="text-align: left; font-size: 0.8em; color: #3498db; margin-bottom: 2px;">OXYGEN SUPPLY</div>
                 <div class="progress-bar-bg">
@@ -84,9 +37,20 @@
                 </div>
             </div>
 
+            <div id="battle-area" class="battle-area" style="opacity: 0;">
+                <div class="battle-token-container">
+                    <span class="battle-label">AI</span>
+                    <div id="battle-token-ai" class="card token enemy">?</div>
+                </div>
+                <div class="vs-text">VS</div>
+                <div class="battle-token-container">
+                    <span class="battle-label">YOU</span>
+                    <div id="battle-token-human" class="card token">?</div>
+                </div>
+            </div>
+
             <div id="start-screen">
                 <h1 class="title-logo">AIR POKER</h1>
-                
                 <div class="rule-box">
                     <div class="rule-section-title">ルール概要</div>
                     <ul>
@@ -94,7 +58,6 @@
                         <li><span class="keyword">参加料(Ante):</span> ラウンド数と同じ額 <span class="value">(R1=1, R2=2...)</span></li>
                         <li><span class="keyword">勝利条件:</span> 相手のエアを尽きさせる</li>
                     </ul>
-
                     <div class="rule-section-title">Betの取り決め</div>
                     <ul>
                         <li>カード(数字)オープン後にBet開始</li>
@@ -102,14 +65,12 @@
                         <li><span class="keyword">レイズ上限:</span> 場にある総額(POT)の<span class="value">半分</span>まで</li>
                         <li><span class="keyword">Bet上限:</span> エアの少ない方の所持数まで</li>
                     </ul>
-
-                    <div class="rule-section-title danger">天災</div>
+                    <div class="rule-section-title danger">天災 (TENSAI)</div>
                     <ul>
-                        <li>両者が<span class="alert-text">特定の負け方</span>をした場合発生</li>
+                        <li>両者が<span class="alert-text">同じカード構成</span>で役を作っていた場合発生</li>
                         <li>敗者は <span class="alert-text" style="border-bottom: 1px solid red;">賭け額と同等のエアを追加で失う</span></li>
                     </ul>
                 </div>
-
                 <div style="margin-top: 20px;">
                     難易度: 
                     <select id="difficulty-select" style="font-size: 18px; padding: 5px;">
@@ -124,6 +85,7 @@
             </div>
 
             <div id="pot-display" style="display:none;">POT: <span id="pot-amount">0</span></div>
+            
             <div id="message-box"></div>
 
             <div id="bet-controls" style="display:none;">
@@ -132,13 +94,11 @@
                     <div>Call必要額: <span id="amount-to-call" class="highlight-yellow">0</span></div>
                     <div>Raise上限: <span id="raise-limit" class="highlight-green">0</span></div>
                 </div>
-
                 <div class="bet-input-area">
                     <button id="btn-minus">-</button>
                     <input type="number" id="bet-input" value="0" readonly>
                     <button id="btn-plus">+</button>
                 </div>
-
                 <div class="bet-actions">
                     <button id="btn-fold" class="btn-fold">FOLD</button>
                     <button id="btn-confirm" class="btn-confirm">BET!</button>
@@ -149,7 +109,7 @@
         </div>
 
         <div id="player-area" class="player-area">
-            <div id="player-hand" class="card-container"></div>
+            <div id="player-hand" class="card-container" style="display:none;"></div>
             <div id="player-numbers" class="number-container"></div>
             <div class="status-row">
                 <span>Wins: <span id="player-wins">0</span></span>

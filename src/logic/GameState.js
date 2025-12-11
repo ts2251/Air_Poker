@@ -20,9 +20,6 @@ export class GameState {
         this.currentRoundBets = { human: 0, ai: 0 };
         this.selectedIndices = { human: -1, ai: -1 };
         
-        // ベットラウンドの状態管理用フラグ
-        this.hasActionOccurred = false; 
-
         this.history = [];
 
         this.players = {
@@ -42,7 +39,6 @@ export class GameState {
         this.players.human.wins = 0;
         this.players.ai.wins = 0;
         this.firstBetter = 'human';
-        
         this.startRoundLogic();
     }
 
@@ -62,21 +58,14 @@ export class GameState {
         this.startRound();
     }
 
-    // ★修正: 重複トークン回避を実装
     dealStructuredNumbers() {
         const fullDeck = [...this.deck.cards];
         this.shuffleArray(fullDeck);
         const group1 = fullDeck.slice(0, 26);
         const group2 = fullDeck.slice(26, 52);
-
-        // 人間のトークンを先に生成
         this.players.human.numbers = this.generateTieredTokens(group1, null);
-        
-        // AIのトークン生成時、人間が持っている数字を避けるリストとして渡す
         const forbiddenNumbers = new Set(this.players.human.numbers);
         this.players.ai.numbers = this.generateTieredTokens(group2, forbiddenNumbers);
-        
-        console.log("Structured Tokens Dealt.");
     }
 
     generateTieredTokens(pool, forbiddenSet) {
@@ -89,19 +78,14 @@ export class GameState {
             { min: 5000, max: 9999 },
             { min: 0,    max: 4999 }
         ];
-
         for (const target of targets) {
             let bestHand = null;
             let calcNum = -1;
-
-            // 1000回試行
             for (let i = 0; i < 1000; i++) {
                 if (currentPool.length < 5) break;
                 const sample = this.getRandomSubarray(currentPool, 5);
                 const score = HandEvaluator.evaluate(sample);
                 const num = this.currentRule.calc(sample);
-
-                // 条件チェック: スコア範囲内 かつ 禁止数字ではない
                 if (score >= target.min && score <= target.max) {
                     if (!forbiddenSet || !forbiddenSet.has(num)) {
                         bestHand = sample;
@@ -110,16 +94,13 @@ export class GameState {
                     }
                 }
             }
-            // フォールバック
             if (!bestHand) {
-                // 禁止数字と被らないものを適当に探す
                 for(let k=0; k<100; k++) {
                     bestHand = this.getRandomSubarray(currentPool, 5);
                     calcNum = this.currentRule.calc(bestHand);
                     if (!forbiddenSet || !forbiddenSet.has(calcNum)) break;
                 }
             }
-
             const usedIds = new Set(bestHand.map(c => c.id));
             currentPool = currentPool.filter(c => !usedIds.has(c.id));
             tokens.push(calcNum);
@@ -140,20 +121,11 @@ export class GameState {
             this.phase = 'GAME_OVER';
             return;
         }
-
         this.payChips('human', ante);
         this.payChips('ai', ante);
 
-        // ★修正: AIの数字選択時に情報を渡す
         if (this.players.ai.numbers.length > 0) {
-            // 現在の有効カードリストを作成
-            const validCards = this.deck.cards.filter(c => !this.bannedCardIds.has(c.id));
-            
-            this.selectedIndices.ai = this.ai.decideNumberToPlay(
-                this.players.ai.numbers,
-                this.currentRule, // GOD用: 正解ルール
-                validCards        // GOD用: 真実のカード
-            );
+            this.selectedIndices.ai = this.ai.decideNumberToPlay(this.players.ai.numbers);
         }
     }
 
@@ -169,11 +141,11 @@ export class GameState {
         this.selectedIndices.human = humanIndex;
         
         this.phase = 'BETTING';
-        this.hasActionOccurred = false; // アクションフラグのリセット
-
         this.firstBetter = (this.round % 2 !== 0) ? 'human' : 'ai';
         this.turn = this.firstBetter;
 
+        // ★修正: AIが先攻の場合、処理を実行するが、結果（AIが何をベットしたか）を
+        // 確実にUIに伝えるために、ここでは直接 processAiTurn の戻り値を返す
         if (this.turn === 'ai') {
             return this.processAiTurn();
         }
@@ -185,13 +157,19 @@ export class GameState {
         const hBet = this.currentRoundBets.human;
         const aBet = this.currentRoundBets.ai;
         const callAmount = Math.max(0, aBet - hBet);
+        
+        // ★修正: レイズ上限 = (現在のPOT / 2)
+        // ※ポーカーの一般的なルールでは「相手のベット額」なども考慮するが、
+        //  「場にある総額の半分」というルールに従う
         const maxRaise = Math.floor(this.pot / 2);
 
         return {
             phase: 'BETTING',
             turn: this.turn,
+            // 選択された数字
             hNum: this.players.human.numbers[this.selectedIndices.human],
             aNum: this.players.ai.numbers[this.selectedIndices.ai],
+            
             pot: this.pot,
             enemyBetTotal: aBet,
             myBetTotal: hBet,
@@ -202,7 +180,6 @@ export class GameState {
         };
     }
 
-    // ★修正: ベットロジック（勝手に終わらないように）
     processPlayerBet(additionalAmount) {
         if (this.phase !== 'BETTING' || this.turn !== 'human') return;
 
@@ -211,35 +188,26 @@ export class GameState {
             return this.resolveRound('ai');
         }
 
-        // 支払い
         this.players.human.chips -= additionalAmount;
         this.currentRoundBets.human += additionalAmount;
         this.pot += additionalAmount;
         
-        // アクションがあったことを記録
-        this.hasActionOccurred = true;
-
         const hTotal = this.currentRoundBets.human;
         const aTotal = this.currentRoundBets.ai;
         
-        // 判定ロジック修正
+        // アクション後の判定
         if (hTotal === aTotal) {
-            // 金額が並んだ（コール、またはチェック）
-            
-            // ケース1: 先攻がチェック(0)しただけなら、まだ終わらない。後攻へ。
-            if (this.firstBetter === 'human' && additionalAmount === 0 && aTotal === this.round /*アンティ分のみ*/) { // ※アンティ考慮が必要かも。currentRoundBetsにはアンティ含まれている想定
-                 // アンティ処理でcurrentRoundBetsに入れているので、
-                 // 「現在のベット額が開始時の額（アンティ）と同じ」かつ「先攻」ならチェック扱い
-                 // ここでは簡易的に「相手がアクションしていない」なら交代とみなす
+            // コールまたはチェック
+            // もし先攻プレイヤーが初手チェック（0ベット）しただけなら、まだショーダウンしない
+            if (this.firstBetter === 'human' && additionalAmount === 0 && aTotal === this.round /* アンティのみ */) {
                  this.turn = 'ai';
                  return this.processAiTurn();
             }
-            
-            // ケース2: 後攻がコール/チェックした、または先攻が相手のレイズにコールした
+            // それ以外（後攻のコール、レイズ後のコール等）はショーダウン
             return this.resolveShowdown();
 
         } else if (hTotal > aTotal) {
-            // レイズした -> AIへ
+            // レイズ -> AIへ
             this.turn = 'ai';
             return this.processAiTurn();
         }
@@ -251,48 +219,60 @@ export class GameState {
         const diff = hTotal - aTotal;
         const maxRaise = Math.floor(this.pot / 2);
 
-        // ★追加: GOD用に自分の手の正確なスコアを計算して渡す
         let aiHandScore = null;
         if (this.ai.difficulty === 'GOD') {
             const aNum = this.players.ai.numbers[this.selectedIndices.ai];
             const validCards = this.deck.cards.filter(c => !this.bannedCardIds.has(c.id));
-            // 高精度で計算
             const result = Solver.findBestHand(aNum, this.currentRule, validCards, 5000);
-            if (result && result.hand) {
-                aiHandScore = result.score;
-            } else {
-                aiHandScore = 0; // 役なし確定
-            }
+            aiHandScore = (result && result.hand) ? result.score : 0;
         }
 
-        // 引数に aiHandScore を追加
-        const action = this.ai.decideAction(diff, this.players.ai.chips, maxRaise, aiHandScore);
+        // ★修正: ラウンド数を渡す
+        const action = this.ai.decideAction(diff, this.players.ai.chips, maxRaise, aiHandScore, this.round);
         this.aiLastAction = action.type;
 
-if (action.type === 'FOLD') {
+        if (action.type === 'FOLD') {
             this.players.ai.folded = true;
             return this.resolveRound('human');
+
         } else if (action.type === 'CALL') {
             this.payChips('ai', diff);
-            if (diff === 0 && this.firstBetter === 'human') {
-                return this.resolveShowdown();
+            
+            // ★修正: AIが先攻で、かつチェック（差額0）なら、人間へターンを回す
+            if (this.firstBetter === 'ai' && diff === 0) {
+                // 自分がまだ何もベットしていない（ラウンド開始直後）場合のみ交代
+                // すでに人間がチェックして、AIがチェックしたならショーダウンだが、
+                // processAiTurnが呼ばれるのは「AIが先攻」か「人間がレイズした後」のみ。
+                // 人間レイズ後ならdiff>0なのでここには来ない。
+                // したがって、ここは「AI先攻初手チェック」の場合のみ。
+                this.turn = 'human';
+                // 状態を返して、UI側で「AI: CHECK」と表示させる
+                return this.getBetState();
             }
+
             return this.resolveShowdown();
+
         } else if (action.type === 'RAISE') {
             const raiseAmt = action.amount;
             this.payChips('ai', diff + raiseAmt);
             this.turn = 'human';
             return this.getBetState();
         }
+        
         return this.getBetState();
     }
 
     resolveRound(winnerKey) {
         this.phase = 'RESULT';
+        // 勝利トークンを履歴用に保存
+        const hNum = this.players.human.numbers[this.selectedIndices.human];
+        const aNum = this.players.ai.numbers[this.selectedIndices.ai];
+        
         this.recordHistory(winnerKey, false);
         this.consumeNumbers();
         this.players[winnerKey].wins++;
         this.players[winnerKey].chips += this.pot;
+        
         return {
             phase: 'RESULT',
             winner: winnerKey,
@@ -300,7 +280,10 @@ if (action.type === 'FOLD') {
             pot: this.pot,
             humanScore: this.players.human.chips,
             aiScore: this.players.ai.chips,
-            isTensai: false
+            isTensai: false,
+            // ★追加: どの数字で戦ったかをUIに伝える（バトルゾーン用）
+            hNum: hNum,
+            aNum: aNum
         };
     }
 
@@ -361,7 +344,9 @@ if (action.type === 'FOLD') {
             pot: this.pot,
             humanScore: this.players.human.chips,
             aiScore: this.players.ai.chips,
-            isTensai: isTensai
+            isTensai: isTensai,
+            hNum: hNum,
+            aNum: aNum
         };
     }
 

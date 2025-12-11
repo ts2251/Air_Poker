@@ -6,58 +6,60 @@ const game = new GameState();
 const renderer = new Renderer();
 const audio = new AudioController();
 
+// --- スタート画面制御 ---
 const startScreen = document.getElementById('start-screen');
 const startBtn = document.getElementById('start-btn');
 const diffSelect = document.getElementById('difficulty-select');
 
+// ゲームエリアの要素
 const gameElements = [
     document.getElementById('ai-area'),
     document.getElementById('player-area'),
-    document.getElementById('bet-controls')
+    document.getElementById('bet-controls'),
+    document.getElementById('oxygen-container'),
+    document.getElementById('pot-display'),
+    document.getElementById('battle-area')
 ];
+
+// 初期化：ゲームエリアを隠す
 gameElements.forEach(el => { if(el) el.style.display = 'none'; });
 
-// 酸素減少タイマー変数
+// タイマー関連
 let oxygenInterval = null; 
 let meterFrame = null;     
 let nextDecayTime = 0;     
 const DECAY_DURATION = 45000; // 45秒
 
-// GAME STARTボタン
+// --- GAME START ---
 if (startBtn) {
     startBtn.onclick = () => {
         audio.play('click');
         const diff = diffSelect ? diffSelect.value : 'NORMAL';
+        
         if (startScreen) startScreen.style.display = 'none';
         
-        gameElements.forEach(el => { if(el) el.style.display = 'block'; });
-        document.getElementById('bet-controls').style.display = 'none'; 
+        // ゲーム画面を表示（ベットコン以外）
+        gameElements.forEach(el => { 
+            if(el && el.id !== 'bet-controls') el.style.display = 'block'; 
+        });
+        document.getElementById('battle-area').style.display = 'flex'; // flexで表示
 
         game.startNewGame(diff);
         renderer.initGame(game);
         
-        // ★修正: ゲーム開始時に一度だけタイマーを起動
-        // 既存のタイマーがあればリセット
-        stopOxygenTimer();
-        nextDecayTime = Date.now() + DECAY_DURATION; // 初回の目標時刻設定
-        startOxygenTimerLoop();
+        startOxygenTimer();
     };
 }
 
-// ★修正: タイマーロジックを分離
-// setIntervalではなく、再帰的な setTimeout または 常に監視するループにする方が
-// 「時間を引き継ぐ」実装がしやすいですが、今回は setInterval を使い回す方式にします。
-
-function startOxygenTimerLoop() {
-    // 1. チップ減少ロジック (定期実行)
-    // 既に動いていれば二重起動しない
-    if (oxygenInterval) clearInterval(oxygenInterval);
+// --- 酸素タイマー ---
+function startOxygenTimer() {
+    stopOxygenTimer(); 
+    nextDecayTime = Date.now() + DECAY_DURATION;
     
+    // 減少ロジック
     oxygenInterval = setInterval(() => {
-        // 次の減少時刻を更新
-        nextDecayTime = Date.now() + DECAY_DURATION;
-        
         const res = game.decayOxygen();
+        nextDecayTime = Date.now() + DECAY_DURATION; 
         
         if (res) {
             renderer.renderState(game);
@@ -69,28 +71,23 @@ function startOxygenTimerLoop() {
             }
 
             if (res.isGameOver) {
-                stopOxygenTimer(); // ゲームオーバー時のみ止める
+                stopOxygenTimer();
                 renderer.showGameOver(game, "酸素（チップ）枯渇により死亡！");
                 audio.play('lose');
             }
         }
     }, DECAY_DURATION);
 
-    // 2. メーター更新アニメーション (常に回す)
-    if (meterFrame) cancelAnimationFrame(meterFrame);
-    
+    // メーターアニメーション
     const animateMeter = () => {
         const now = Date.now();
         const remain = nextDecayTime - now;
         let percent = (remain / DECAY_DURATION) * 100;
-        
-        // 表示上の調整
-        if (percent < 0) percent = 0; // 減少瞬間
-        if (percent > 100) percent = 100; // 開始直後
+        if (percent < 0) percent = 0;
+        if (percent > 100) percent = 100;
 
         renderer.updateOxygenMeter(percent);
 
-        // ゲームオーバーでなければ回し続ける
         if (game.phase !== 'GAME_OVER') {
              meterFrame = requestAnimationFrame(animateMeter);
         }
@@ -99,41 +96,40 @@ function startOxygenTimerLoop() {
 }
 
 function stopOxygenTimer() {
-    if (oxygenInterval) {
-        clearInterval(oxygenInterval);
-        oxygenInterval = null;
-    }
-    if (meterFrame) {
-        cancelAnimationFrame(meterFrame);
-        meterFrame = null;
-    }
+    if (oxygenInterval) clearInterval(oxygenInterval);
+    if (meterFrame) cancelAnimationFrame(meterFrame);
 }
 
-// ベット入力管理
+// --- ベット入力管理 ---
 let currentInputBet = 0;
 let minRequiredBet = 0;
+let maxRaiseLimit = 0;
 
-// プレイヤーアクション
+// --- プレイヤーのアクション（カード選択） ---
 window.handlePlayerAction = (index) => {
+    // 選択フェーズでなければ無視
     if (game.phase !== 'SELECT') return;
+    
     audio.play('click');
     const result = game.selectCard(index);
     updateBetUI(result);
 };
 
-// UI更新
+// --- UI更新の統合関数 ---
 function updateBetUI(gameStateData) {
     if (!gameStateData) return;
 
+    // 1. 結果画面
     if (gameStateData.phase === 'RESULT') {
         renderer.renderState(game);
         renderer.renderResult(gameStateData);
         
-        // ★追加: 天災の音
+        // 音の再生
         if (gameStateData.isTensai) audio.play('thunder');
         else if (gameStateData.winner === 'human') audio.play('win');
         else if (gameStateData.winner === 'ai') audio.play('lose');
 
+        // 終了判定
         if (game.players.human.numbers.length === 0) {
             renderer.showGameOver(game, "すべての数字を使い切りました。");
             stopOxygenTimer();
@@ -141,103 +137,143 @@ function updateBetUI(gameStateData) {
         return;
     }
 
+    // 2. ベット画面
     if (gameStateData.phase === 'BETTING') {
         renderer.renderState(game);
-        if (gameStateData.aiActionLog === 'RAISE') {
-            renderer.showMessage("AIがレイズしてきました！");
-        } else {
-            renderer.showMessage("アクションを選択してください。");
+        
+        // メッセージ更新
+        let msg = "アクションを選択してください。";
+        if (gameStateData.aiActionLog === 'RAISE') msg = "AIがレイズしてきました！";
+        else if (gameStateData.aiActionLog === 'CALL') msg = "AIがコールしました。";
+        else if (gameStateData.aiActionLog === 'FOLD') msg = "AIが降りました。";
+        else if (gameStateData.turn === 'human' && gameStateData.callAmount === 0 && gameStateData.pot > 0) {
+            msg = "AIはチェックしました。";
         }
+        renderer.showMessage(msg);
+
+        // 画面表示
         renderer.showBetPhase(gameStateData.hNum, gameStateData.aNum, gameStateData.pot);
+        
+        // 変数更新
         minRequiredBet = gameStateData.callAmount;
+        maxRaiseLimit = gameStateData.maxRaise;
+        
+        // 入力値を「コール額」にリセット
         currentInputBet = minRequiredBet;
         updateInputDisplay();
         
+        // 情報表示の更新
         const enemyBetEl = document.getElementById('current-enemy-bet');
         const callAmtEl = document.getElementById('amount-to-call');
+        const raiseLimEl = document.getElementById('raise-limit');
+        
         if(enemyBetEl) enemyBetEl.textContent = gameStateData.enemyBetTotal;
         if(callAmtEl) callAmtEl.textContent = gameStateData.callAmount;
+        if(raiseLimEl) raiseLimEl.textContent = maxRaiseLimit;
     }
 }
 
+// --- 入力欄とボタンの表示更新 ---
 function updateInputDisplay() {
     const input = document.getElementById('bet-input');
     const btnConfirm = document.getElementById('btn-confirm');
+    
     if(input) input.value = currentInputBet;
+    
+    // ボタンの色と文字を変える
     if(btnConfirm) {
         if(currentInputBet === minRequiredBet) {
+            // 追加額がコール額と同じ（上乗せなし）ならCHECK/CALL
             btnConfirm.textContent = (currentInputBet === 0) ? "CHECK" : "CALL";
-            btnConfirm.style.backgroundColor = "#3498db";
+            btnConfirm.style.backgroundColor = "#3498db"; // 青
         } else {
+            // 上乗せがあるならRAISE
             btnConfirm.textContent = "RAISE";
-            btnConfirm.style.backgroundColor = "#e67e22";
+            btnConfirm.style.backgroundColor = "#e67e22"; // オレンジ
         }
     }
 }
 
-function getMaxBet() {
-    // gameインスタンスが持つデータから計算
-    // GameStateで計算された maxRaise とは別に、絶対的な上限が必要
-    // 自分が追加で出せる額 = 自分のチップ
-    // 相手が追加で出せる額 = 相手のチップ
-    // よって、追加ベットの上限は Math.min(自分のチップ, 相手のチップ + (相手の既存Bet - 自分の既存Bet))
-    
-    // シンプルに:
-    // GameState.jsで callAmount（最低額）は計算されている
-    // 追加できる額の上限は、自分のチップ残高
-    // ただし、相手のチップ残高を超えてレイズすることはできない（テーブルステークス）
-    
-    // ここでは簡易的に「自分の所持金」を上限としつつ、GameState側で補正してもらう
-    return game.players.human.chips;
-}
+// --- ボタンイベント ---
 
+// プラスボタン (+)
 const btnPlus = document.getElementById('btn-plus');
 if (btnPlus) {
     btnPlus.onclick = () => {
-        // 現在のレイズ上限（ルールの半分制限など）を確認
-        // gameStateDataが必要だが、ここでは簡易的に所持金チェックのみ
-        if (currentInputBet < game.players.human.chips) {
+        // 上限チェック
+        // 1. ルール上のレイズ上限 (現在のPOTの半分)
+        const ruleLimit = minRequiredBet + maxRaiseLimit;
+        // 2. 自分の所持金限界
+        const walletLimit = game.players.human.chips;
+        
+        const absoluteLimit = Math.min(ruleLimit, walletLimit);
+
+        if (currentInputBet < absoluteLimit) {
             currentInputBet++;
+            updateInputDisplay();
+        } else {
+            // 上限到達のエフェクトや音を入れるならここ
+            // audio.play('alert'); 
+        }
+    };
+}
+
+// マイナスボタン (-)
+const btnMinus = document.getElementById('btn-minus');
+if (btnMinus) {
+    btnMinus.onclick = () => {
+        // 下限はコール額（それ以下には下げられない）
+        if (currentInputBet > minRequiredBet) {
+            currentInputBet--;
             updateInputDisplay();
         }
     };
 }
 
-const btnMinus = document.getElementById('btn-minus');
-if (btnMinus) btnMinus.onclick = () => {
-    if (currentInputBet > minRequiredBet) {
-        currentInputBet--;
-        updateInputDisplay();
-    }
-};
-
+// 決定ボタン (BET / CALL / CHECK)
 const btnConfirm = document.getElementById('btn-confirm');
-if (btnConfirm) btnConfirm.onclick = () => {
-    const inputVal = document.getElementById('bet-input').value;
-    if (inputVal > 0) audio.play('bet');
-    else audio.play('click');
-    
-    const result = game.processPlayerBet(parseInt(inputVal));
-    updateBetUI(result);
-};
+if (btnConfirm) {
+    btnConfirm.onclick = () => {
+        // 念のためクリック音
+        if (currentInputBet > 0) audio.play('bet');
+        else audio.play('click');
 
+        // 入力を確定して送信
+        const result = game.processPlayerBet(parseInt(currentInputBet));
+        
+        // 画面更新（もし undefined ならAIターン待ち等のため更新しない）
+        if (result) updateBetUI(result);
+    };
+}
+
+// FOLDボタン
 const btnFold = document.getElementById('btn-fold');
-if (btnFold) btnFold.onclick = () => {
-    audio.play('fold');
-    const result = game.processPlayerBet(-1);
-    updateBetUI(result);
-};
+if (btnFold) {
+    btnFold.onclick = () => {
+        audio.play('fold');
+        const result = game.processPlayerBet(-1); // -1 is Fold
+        if (result) updateBetUI(result);
+    };
+}
 
-// btnNext の修正（タイマー再開）
+// 次のラウンドへボタン
 const btnNext = document.getElementById('next-round-btn');
-if (btnNext) btnNext.onclick = () => {
-    audio.play('click');
-    game.startRound();
-    if (game.phase === 'GAME_OVER') {
-        renderer.showGameOver(game, "参加費が払えません！破産により終了。");
-        stopOxygenTimer();
-    } else {
-        renderer.initGame(game);
-        // startOxygenTimer(); // タイマーリセット＆再開
-    }
-};
+if (btnNext) {
+    btnNext.onclick = () => {
+        audio.play('click');
+        
+        // バトルエリアの数字を隠す（または不透明度を下げる）
+        const battleArea = document.getElementById('battle-area');
+        if(battleArea) battleArea.style.opacity = '0';
+
+        game.startRound();
+        
+        if (game.phase === 'GAME_OVER') {
+            renderer.showGameOver(game, "参加費が払えません！破産により終了。");
+            stopOxygenTimer();
+        } else {
+            renderer.initGame(game);
+            // タイマーは止めずに継続
+        }
+    };
+}

@@ -65,10 +65,12 @@ export class PokerAI {
 
     // ベット判断
     // GODの場合は handStrength (自分の手の正確な強さ) を受け取れるようにする
-    decideAction(diff, myChips, maxRaise, handScore = null) {
+    decideAction(diff, myChips, maxRaise, handScore = null, round = 3) {
         // GODロジック
         if (this.difficulty === 'GOD') {
             // 手の強さがわかっている場合
+            const canFold = (round > 2);
+
             if (handScore !== null) {
                 // 非常に強い(8000以上:ストフラ級)なら絶対レイズ
                 if (handScore >= 8000) {
@@ -92,7 +94,7 @@ export class PokerAI {
              if (raise > 0) return { type: 'RAISE', amount: raise };
         }
         
-        if (Math.random() < 0.1) return {type: 'FOLD'};
+        if (canFold && Math.random() < 0.1) return {type: 'FOLD'};
         return { type: 'CALL' };
     }
 

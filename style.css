@@ -383,3 +383,42 @@ body {
     .card.token { font-size: 22px; }
     .tensai-char { font-size: 5rem; }
 }
+
+/* style.css の末尾に追加 */
+
+/* --- バトルゾーン --- */
+.battle-area {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 30px;
+    margin: 10px 0;
+    transition: opacity 0.5s;
+    min-height: 120px;
+}
+
+.battle-token-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.battle-label {
+    font-size: 0.8em;
+    color: #bdc3c7;
+    margin-bottom: 5px;
+}
+
+.vs-text {
+    font-size: 2em;
+    font-weight: bold;
+    color: #e74c3c;
+    font-family: impact, sans-serif;
+    text-shadow: 2px 2px 0 #000;
+}
+
+/* 役結果表示用（カードコンテナの上書き） */
+#player-hand, #ai-hand {
+    min-height: 0; /* 高さを自動調整 */
+    margin: 5px 0;
+}
