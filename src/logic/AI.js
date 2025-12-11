@@ -65,23 +65,28 @@ export class PokerAI {
 
     // ベット判断
     // GODの場合は handStrength (自分の手の正確な強さ) を受け取れるようにする
-    decideAction(diff, myChips, maxRaise, handScore = null, round = 3) {
+    decideAction(diff, myChips, maxRaise, myHandScore = null, opponentHandScore = null) {
         // GODロジック
         if (this.difficulty === 'GOD') {
-            // 手の強さがわかっている場合
-            const canFold = (round > 2);
-
-            if (handScore !== null) {
-                // 非常に強い(8000以上:ストフラ級)なら絶対レイズ
-                if (handScore >= 8000) {
+            // 自分と相手の手の強さがわかっている場合
+            if (myHandScore !== null && opponentHandScore !== null) {
+                console.log(`[GOD AI] MyScore: ${myHandScore} vs Opponent: ${opponentHandScore}`);
+                
+                if (myHandScore > opponentHandScore) {
+                    // 勝てるなら上限までレイズしてむしり取る
                     const raise = Math.min(myChips - diff, maxRaise);
                     if (raise > 0) return { type: 'RAISE', amount: raise };
                     return { type: 'CALL' };
+                } else if (myHandScore < opponentHandScore) {
+                    // 負けるなら1チップも無駄にせず降りる
+                    return { type: 'FOLD' };
+                } else {
+                    // 引き分けならコール
+                    return { type: 'CALL' };
                 }
-                // 弱い(役なし等)なら降りる
-                if (handScore < 100) return { type: 'FOLD' };
             }
-            // それ以外は通常判断（ただしGODはミスらないので基本強気）
+            
+            // 万が一スコア計算できていない場合（通常ありえないが）はコール
             return { type: 'CALL' };
         }
 

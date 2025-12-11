@@ -188,29 +188,36 @@ export class GameState {
             return this.resolveRound('ai');
         }
 
+        // 支払い
         this.players.human.chips -= additionalAmount;
         this.currentRoundBets.human += additionalAmount;
         this.pot += additionalAmount;
         
+        // アクションがあったことを記録
+        this.hasActionOccurred = true;
+
         const hTotal = this.currentRoundBets.human;
         const aTotal = this.currentRoundBets.ai;
         
-        // アクション後の判定
+        // 判定ロジック
         if (hTotal === aTotal) {
-            // コールまたはチェック
-            // もし先攻プレイヤーが初手チェック（0ベット）しただけなら、まだショーダウンしない
-            if (this.firstBetter === 'human' && additionalAmount === 0 && aTotal === this.round /* アンティのみ */) {
+            // 金額が並んだ（コール、またはチェック）
+            if (this.firstBetter === 'human' && additionalAmount === 0 && aTotal === this.round) {
                  this.turn = 'ai';
                  return this.processAiTurn();
             }
-            // それ以外（後攻のコール、レイズ後のコール等）はショーダウン
             return this.resolveShowdown();
 
         } else if (hTotal > aTotal) {
-            // レイズ -> AIへ
+            // レイズした -> AIへ
             this.turn = 'ai';
             return this.processAiTurn();
         }
+
+        // ★バグ修正:
+        // ここに到達する場合（hTotal < aTotal の状態など）、undefinedが返るとUIが更新されずボタンが効かなくなる。
+        // 必ず最新の状態を返すことでUIを正常に保つ。
+        return this.getBetState();
     }
 
     processAiTurn() {
@@ -219,16 +226,26 @@ export class GameState {
         const diff = hTotal - aTotal;
         const maxRaise = Math.floor(this.pot / 2);
 
+        // ★GOD用に自分と相手の手の正確なスコアを計算して渡す
         let aiHandScore = null;
+        let humanHandScore = null; // 追加
+
         if (this.ai.difficulty === 'GOD') {
             const aNum = this.players.ai.numbers[this.selectedIndices.ai];
+            const hNum = this.players.human.numbers[this.selectedIndices.human]; // 相手の数字
             const validCards = this.deck.cards.filter(c => !this.bannedCardIds.has(c.id));
-            const result = Solver.findBestHand(aNum, this.currentRule, validCards, 5000);
-            aiHandScore = (result && result.hand) ? result.score : 0;
+            
+            // AIの手を計算
+            const aiResult = Solver.findBestHand(aNum, this.currentRule, validCards, 5000);
+            aiHandScore = (aiResult && aiResult.hand) ? aiResult.score : 0;
+
+            // 相手（人間）の手を計算
+            const hResult = Solver.findBestHand(hNum, this.currentRule, validCards, 5000);
+            humanHandScore = (hResult && hResult.hand) ? hResult.score : 0;
         }
 
-        // ★修正: ラウンド数を渡す
-        const action = this.ai.decideAction(diff, this.players.ai.chips, maxRaise, aiHandScore, this.round);
+        // 引数に humanHandScore を追加
+        const action = this.ai.decideAction(diff, this.players.ai.chips, maxRaise, aiHandScore, humanHandScore);
         this.aiLastAction = action.type;
 
         if (action.type === 'FOLD') {

@@ -9,7 +9,7 @@ export class Solver {
      * @param {Array} availableCards
      * @param {number} maxTrials - 試行回数（デフォルト2000回あれば十分見つかります）
      */
-    static findBestHand(targetNumber, rule, availableCards, maxTrials = 2000) {
+    static findBestHand(targetNumber, rule, availableCards, maxTrials = 10000) {
         let bestHand = null;
         let bestScore = -1;
         const cardCount = availableCards.length;
