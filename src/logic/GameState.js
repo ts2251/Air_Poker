@@ -245,7 +245,7 @@ export class GameState {
         }
 
         // 引数に humanHandScore を追加
-        const action = this.ai.decideAction(diff, this.players.ai.chips, maxRaise, aiHandScore, humanHandScore);
+        const action = this.ai.decideAction(diff, this.players.ai.chips, maxRaise, aiHandScore, humanHandScore, this.round);
         this.aiLastAction = action.type;
 
         if (action.type === 'FOLD') {
