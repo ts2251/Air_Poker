@@ -44,6 +44,21 @@ if (startBtn) {
         });
         document.getElementById('battle-area').style.display = 'flex'; // flexで表示
 
+        // ★★★ 【ここを追加】 難易度を画面に表示する処理 ★★★
+        const aiNameLabel = document.getElementById('ai-name-display');
+        if (aiNameLabel) {
+            // 例: "AI (GOD)" のように表示を変更
+            aiNameLabel.textContent = `AI (${diff})`;
+            
+            // お好みで色を変える場合（例: GODなら赤くする等）
+            if (diff === 'GOD') {
+                aiNameLabel.style.color = 'red';
+                aiNameLabel.textContent = `AI [GOD]`; // 強そうにする
+            } else {
+                aiNameLabel.style.color = ''; // 元に戻す
+            }
+        }
+
         game.startNewGame(diff);
         renderer.initGame(game);
         

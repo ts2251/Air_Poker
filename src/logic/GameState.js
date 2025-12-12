@@ -22,6 +22,8 @@ export class GameState {
         
         this.history = [];
 
+        this.lastAiRaiseAmount = 0;
+
         this.players = {
             human: { numbers: [], wins: 0, chips: 30, folded: false },
             ai:    { numbers: [], wins: 0, chips: 30, folded: false }
@@ -116,6 +118,9 @@ export class GameState {
         this.selectedIndices = { human: -1, ai: -1 };
         ['human', 'ai'].forEach(p => this.players[p].folded = false);
 
+        this.lastAiRaiseAmount = 0; // 【追加】
+        this.aiLastAction = null;   // 【追加】念のためアクションログもリセット
+
         const ante = this.round;
         if (this.players.human.chips < ante || this.players.ai.chips < ante) {
             this.phase = 'GAME_OVER';
@@ -125,7 +130,15 @@ export class GameState {
         this.payChips('ai', ante);
 
         if (this.players.ai.numbers.length > 0) {
-            this.selectedIndices.ai = this.ai.decideNumberToPlay(this.players.ai.numbers);
+            // 1. 場に残っている有効なカードリストを作成（GODモード用）
+            const validCards = this.deck.cards.filter(c => !this.bannedCardIds.has(c.id));
+            
+            // 2. 引数として「現在のルール」と「有効なカード」を追加して渡す
+            this.selectedIndices.ai = this.ai.decideNumberToPlay(
+                this.players.ai.numbers, 
+                this.currentRule, 
+                validCards
+            );
         }
     }
 
@@ -153,20 +166,18 @@ export class GameState {
         return this.getBetState();
     }
 
+    // getBetState() メソッド全体を修正
     getBetState() {
         const hBet = this.currentRoundBets.human;
         const aBet = this.currentRoundBets.ai;
         const callAmount = Math.max(0, aBet - hBet);
         
-        // ★修正: レイズ上限 = (現在のPOT / 2)
-        // ※ポーカーの一般的なルールでは「相手のベット額」なども考慮するが、
-        //  「場にある総額の半分」というルールに従う
-        const maxRaise = Math.floor(this.pot / 2);
+        // レイズ上限: 現在のPOTの半分（最低1は保証する）
+        const maxRaise = Math.max(1, Math.floor(this.pot / 2));
 
         return {
             phase: 'BETTING',
             turn: this.turn,
-            // 選択された数字
             hNum: this.players.human.numbers[this.selectedIndices.human],
             aNum: this.players.ai.numbers[this.selectedIndices.ai],
             
@@ -175,8 +186,11 @@ export class GameState {
             myBetTotal: hBet,
             callAmount: callAmount,
             minBet: callAmount,
-            maxRaise: maxRaise,
-            aiActionLog: this.aiLastAction || null
+            
+            maxRaise: maxRaise, // 計算した上限を渡す
+            
+            aiActionLog: this.aiLastAction || null,
+            lastAiRaiseAmount: this.lastAiRaiseAmount // 【追加】UI表示用
         };
     }
 
@@ -272,6 +286,11 @@ export class GameState {
         } else if (action.type === 'RAISE') {
             const raiseAmt = action.amount;
             this.payChips('ai', diff + raiseAmt);
+
+            // 【追加】ログと金額を記録
+            this.aiLastAction = 'RAISE';
+            this.lastAiRaiseAmount = raiseAmt;
+
             this.turn = 'human';
             return this.getBetState();
         }

@@ -100,9 +100,51 @@ export class PokerAI {
         }
         
         // 2. 受け取った round を使って判定（3ラウンド目以降なら降りれる）
-        const canFold = round >= 3;
+const canFold = round >= 3;
 
-        if (canFold && Math.random() < 0.1) return {type: 'FOLD'};
+        // 2. 先攻（diff === 0: まだ場にベット差分がない）の場合
+        //    → ここで「BET（RAISE）」するか「CHECK」するか決める
+        if (diff === 0) {
+            // 攻撃性: HARDなら60%、NORMALなら30%の確率で先制攻撃
+            const aggroChance = (this.difficulty === 'HARD') ? 0.6 : 0.3;
+            
+            if (Math.random() < aggroChance) {
+                // 所持金と相談してベット額を決める (1〜5の間)
+                let betAmount = Math.floor(Math.random() * 5) + 1;
+                // 上限キャップ (最大レイズ額 vs 自分の全財産)
+                betAmount = Math.min(betAmount, maxRaise, myChips);
+
+                if (betAmount > 0) {
+                    return { type: 'RAISE', amount: betAmount };
+                }
+            }
+            // 攻撃しないなら CHECK (amount 0 の CALL)
+            return { type: 'CALL' };
+        }
+
+        // 3. 後攻（diff > 0: 相手に賭けられている）の場合
+        //    → 「FOLD」「CALL」「RAISE（レイズ返し）」から選ぶ
+        
+        // FOLD判定
+        if (canFold && Math.random() < 0.1) {
+            return { type: 'FOLD' };
+        }
+
+        // RAISE（レイズ返し）判定
+        // 相手のベットに対してさらに上乗せするか？
+        const counterAggro = (this.difficulty === 'HARD') ? 0.3 : 0.1; // 先攻時より確率は下げる
+        
+        // 「所持金に余裕があり」かつ「確率に当選」したらレイズ返し
+        if (myChips > diff + 1 && Math.random() < counterAggro) {
+            let raiseAmount = Math.floor(Math.random() * 3) + 1; // 控えめに1~3追加
+            raiseAmount = Math.min(raiseAmount, maxRaise, myChips - diff);
+
+            if (raiseAmount > 0) {
+                return { type: 'RAISE', amount: raiseAmount };
+            }
+        }
+
+        // 基本は受けて立つ (CALL)
         return { type: 'CALL' };
     }
 
